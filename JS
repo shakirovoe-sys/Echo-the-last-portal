@@ -1,0 +1,1884 @@
+(function () {
+  "use strict";
+/*
+ * DIRECT IMAGE LINKS — EDIT ONLY THE TEXT BETWEEN THESE QUOTES.
+ *
+ * Each link must start with https:// or http:// and must open the image itself,
+ * not a webpage containing the image. Leave a value empty ("") to use the
+ * built-in artwork.
+ */
+const CHARACTER_TEXTURE_DIRECT_LINK = "https://i.postimg.cc/Y9Y5t2gd/Chat-GPT-Image-27-Juli-2026-19-35-35.png";
+const BACKGROUND_TEXTURE_DIRECT_LINK = "https://i.postimg.cc/XJfzTHSy/Chat-GPT-Image-31-Juli-2026-14-35-47.png";
+/*
+ * PLATFORM TEXTURE LINKS
+ *
+ * Paste direct image links between the quotes. Seamless square PNG or WEBP
+ * images work best because the game repeats them across generated platforms.
+ * Leave any link empty to keep that surface's original colors.
+ */
+const NORMAL_PLATFORM_TEXTURE_DIRECT_LINK = "https://i.postimg.cc/Gp9gm30G/seamless-fantasy-platform-tile.png";
+const PORTAL_SURFACE_TEXTURE_DIRECT_LINK = "";
+const SPIKE_TEXTURE_DIRECT_LINK = "https://i.postimg.cc/nhqSsSMV/Codex-Image-Sep-25-2026-09-13-05-PM.png";
+/*
+ * NORMAL PLATFORM IMAGE ADJUSTMENT
+ *
+ * These values remove empty space around the source image. They are decimal
+ * percentages: 0.30 means crop 30% from that edge. The defaults suit platform
+ * strip images with grass/dirt centered inside a larger transparent image.
+ */
+const NORMAL_PLATFORM_TEXTURE_CROP = {
+  left: 0,
+  top: 0.30,
+  right: 0.06,
+  bottom: 0.08
+};
+/*
+ * AUDIO LINKS
+ *
+ * Paste Dropbox share links or direct audio links between the quotes.
+ * Dropbox links are automatically converted into raw playable media links.
+ * Supported browser formats normally include MP3, WAV, OGG, and M4A.
+ */
+const BACKGROUND_MUSIC_LINK = "https://www.dropbox.com/scl/fi/s7u2u3jwr2wl4g321k3fl/Neon-Horizons.mp3?rlkey=fn9v9xpm0381draygmpv01iv3&st=fb1os0s4&dl=0";
+const PORTAL_OPEN_SOUND_LINK = "https://www.dropbox.com/scl/fi/nibhm1ydovdlxujna6mp8/Futuristic_portal_op_-2-1785425417389.mp3?rlkey=us3ecfm4gdefohivpt0f8kycd&st=fcxabxmj&dl=0";
+const PORTAL_ENTER_SOUND_LINK = "https://www.dropbox.com/scl/fi/ytm14azct2ubkdircepv0/Short_sci-fi_portal__-2-1785425605648.mp3?rlkey=q8brzzdah6iwpuvv3o5s8jcgh&st=c986ozhy&dl=0";
+const PORTAL_EXIT_SOUND_LINK = "https://www.dropbox.com/scl/fi/ytm14azct2ubkdircepv0/Short_sci-fi_portal__-2-1785425605648.mp3?rlkey=q8brzzdah6iwpuvv3o5s8jcgh&st=c986ozhy&dl=0";
+const WIN_SOUND_LINK = "https://www.dropbox.com/scl/fi/shvrwyw8q48opl0rryw2u/Create_a_modern_3-5__-1-1785426219623.mp3?rlkey=6w8ayl0xgx8wphogxwddti2bk&st=p7nb0ms2&dl=0";
+
+  defaultDifficulty: "normal",
+  playerTexture: CHARACTER_TEXTURE_DIRECT_LINK,
+  backgroundTexture: BACKGROUND_TEXTURE_DIRECT_LINK,
+  normalPlatformTexture: NORMAL_PLATFORM_TEXTURE_DIRECT_LINK,
+  portalSurfaceTexture: PORTAL_SURFACE_TEXTURE_DIRECT_LINK,
+  spikeTexture: SPIKE_TEXTURE_DIRECT_LINK,
+  normalPlatformTextureCrop: NORMAL_PLATFORM_TEXTURE_CROP,
+  // Size of each repeated platform texture tile in canvas pixels.
+  platformTextureDepth: 72,
+  portalTextureTileSize: 72,
+  spikeTextureTileSize: 48,
+  // These colors are used when the image options above are blank.
+  playerFallbackColor: "#65f4d1",
+  backgroundTopColor: "#102a45",
+  backgroundBottomColor: "#07111d",
+  backgroundTextureOpacity: 0.78,
+  // Audio volume values range from 0 (silent) to 1 (full volume).
+  musicVolume: 0.35,
+  soundEffectsVolume: 0.7,
+  // Internal canvas resolution. CSS scales it down further on small screens.
+  canvasWidth: 800,
+  canvasHeight: 360
+};
+const canvas = document.getElementById("game");
+if (!canvas) {
+  throw new Error("The #game canvas was not found.");
+}
+const ctx = canvas.getContext("2d");
+if (!ctx) {
+  throw new Error("This browser could not create a 2D canvas.");
+}
+canvas.width = GAME_CONFIG.canvasWidth;
+canvas.height = GAME_CONFIG.canvasHeight;
+const blueState = document.getElementById("blueState");
+const orangeState = document.getElementById("orangeState");
+const deathCount = document.getElementById("deathCount");
+const levelInfo = document.getElementById("levelInfo");
+const difficultySelect = document.getElementById("difficultySelect");
+const menuDifficultySelect = document.getElementById("menuDifficultySelect");
+const newLevelButton = document.getElementById("newLevelButton");
+const menuButton = document.getElementById("menuButton");
+const mainMenu = document.getElementById("mainMenu");
+const startGameButton = document.getElementById("startGameButton");
+const overlay = document.getElementById("overlay");
+const overlayTitle = document.getElementById("overlayTitle");
+const overlayText = document.getElementById("overlayText");
+const restartButton = document.getElementById("restartButton");
+const completionMenuButton = document.getElementById("completionMenuButton");
+const gameError = document.getElementById("gameError");
+const requiredElements = [
+  blueState,
+  orangeState,
+  deathCount,
+  levelInfo,
+  difficultySelect,
+  menuDifficultySelect,
+  newLevelButton,
+  menuButton,
+  mainMenu,
+  startGameButton,
+  overlay,
+  overlayTitle,
+  overlayText,
+  restartButton,
+  completionMenuButton
+];
+if (requiredElements.some(element => !element)) {
+  throw new Error("The HTML and JavaScript files do not match.");
+}
+const DIFFICULTIES = {
+  easy: {
+    label: "Easy",
+    sections: 5,
+    requiredPortalChallenges: 2,
+    platformSpikeStrips: 2
+  },
+  normal: {
+    label: "Normal",
+    sections: 8,
+    requiredPortalChallenges: 4,
+    platformSpikeStrips: 3
+  },
+  hard: {
+    label: "Hard",
+    sections: 12,
+    requiredPortalChallenges: 6,
+    platformSpikeStrips: 5
+  }
+};
+const PHYSICS = {
+  gravity: 1900,
+  runAcceleration: 2150,
+  airAcceleration: 1250,
+  groundDeceleration: 2700,
+  airDeceleration: 320,
+  maxRunSpeed: 360,
+  jumpSpeed: 690,
+  maxFallSpeed: 1050,
+  coyoteTime: 0.11,
+  jumpBufferTime: 0.12
+};
+const GENERATION = {
+  worldHeight: 900,
+  minimumPlatformWidth: 390,
+  maximumPlatformWidth: 560,
+  minimumGap: 88,
+  maximumGap: 138,
+  minimumPortalGap: 300,
+  maximumPortalGap: 330,
+  minimumSteppingGap: 205,
+  maximumSteppingGap: 250,
+  maximumStep: 34,
+  minimumFloorY: 675,
+  maximumFloorY: 775
+};
+const FIXED_STEP = 1 / 120;
+const PORTAL_COOLDOWN = 0.16;
+const PORTAL_EDGE_PADDING = 3;
+const MINIMUM_PORTAL_LENGTH = 64;
+const keys = new Set();
+const portals = { blue: null, orange: null };
+const camera = { x: 0, y: 360 };
+const spawn = { x: 90, y: 700 };
+let WORLD = { width: 2400, height: GENERATION.worldHeight };
+let platforms = [];
+let pathSegments = [];
+let levelTransitions = [];
+let levelChallenges = [];
+let exitDoor = { x: 2200, y: 600, w: 54, h: 85 };
+let hints = [];
+let deaths = 0;
+let gameWon = false;
+let gameRunning = false;
+let startInProgress = false;
+let currentDifficulty = DIFFICULTIES[GAME_CONFIG.defaultDifficulty]
+  ? GAME_CONFIG.defaultDifficulty
+  : "normal";
+let currentSeed = 0;
+const player = {
+  x: spawn.x,
+  y: spawn.y,
+  w: 28,
+  h: 42,
+  vx: 0,
+  vy: 0,
+  grounded: false,
+  coyoteTimer: 0,
+  jumpBufferTimer: 0,
+  portalCooldown: 0,
+  lastPortalEntry: "none",
+  lastPortalExit: "none",
+  color: GAME_CONFIG.playerFallbackColor
+};
+function normalizeTextureSource(source) {
+  return String(source || "").trim();
+}
+function isDirectImageUrl(source) {
+  return /^https?:\/\/\S+$/i.test(source);
+}
+function showTextureError(label, source, reason) {
+  console.warn(`Could not load ${label} texture: ${source}`);
+  if (gameError) {
+    gameError.hidden = false;
+    gameError.textContent =
+      `Could not load the ${label} texture. ${reason}`;
+  }
+}
+function loadTexture(source, label, existingTexture) {
+  const texture = existingTexture || {
+    image: null,
+    ready: false,
+    failed: false,
+    source: ""
+  };
+  const normalizedSource = normalizeTextureSource(source);
+  texture.image = null;
+  texture.ready = false;
+  texture.failed = false;
+  texture.source = normalizedSource;
+  if (!normalizedSource) return texture;
+  if (!isDirectImageUrl(normalizedSource)) {
+    texture.failed = true;
+    showTextureError(
+      label,
+      normalizedSource,
+      "Paste a direct link beginning with https:// or http://."
+    );
+    return texture;
+  }
+  const image = new Image();
+  texture.image = image;
+  image.decoding = "async";
+  image.addEventListener("load", () => {
+    // Ignore an old image if the texture was changed while it was loading.
+    if (texture.image !== image) return;
+    texture.ready = true;
+    texture.failed = false;
+    if (
+      gameError &&
+      gameError.textContent.indexOf("texture") !== -1
+    ) {
+      gameError.hidden = true;
+    }
+  });
+  image.addEventListener("error", () => {
+    if (texture.image !== image) return;
+    texture.ready = false;
+    texture.failed = true;
+    showTextureError(
+      label,
+      normalizedSource,
+      "The link must open the image itself and permit image embedding."
+    );
+  });
+  image.src = normalizedSource;
+  // Cached images can already be complete before the next event loop.
+  if (image.complete && image.naturalWidth > 0) {
+    texture.ready = true;
+  }
+  return texture;
+}
+const textures = {
+  player: loadTexture(GAME_CONFIG.playerTexture, "character"),
+  background: loadTexture(GAME_CONFIG.backgroundTexture, "background"),
+  normalPlatform: loadTexture(
+    GAME_CONFIG.normalPlatformTexture,
+    "normal platform"
+  ),
+  portalSurface: loadTexture(
+    GAME_CONFIG.portalSurfaceTexture,
+    "portal surface"
+  ),
+  spikes: loadTexture(GAME_CONFIG.spikeTexture, "spike")
+};
+function setCharacterTexture(source) {
+  loadTexture(source, "character", textures.player);
+}
+function setBackgroundTexture(source) {
+  loadTexture(source, "background", textures.background);
+}
+function setNormalPlatformTexture(source) {
+  loadTexture(source, "normal platform", textures.normalPlatform);
+}
+function setPortalSurfaceTexture(source) {
+  loadTexture(source, "portal surface", textures.portalSurface);
+}
+function setSpikeTexture(source) {
+  loadTexture(source, "spike", textures.spikes);
+}
+function normalizeAudioLink(source) {
+  const normalized = String(source || "").trim();
+  if (!normalized) return "";
+  if (!/^https?:\/\/\S+$/i.test(normalized)) {
+    console.warn(
+      `Audio links must begin with https:// or http://: ${normalized}`
+    );
+    return "";
+  }
+  try {
+    const parsed = new URL(normalized);
+    const hostname = parsed.hostname.toLowerCase();
+    if (hostname === "dropbox.com" || hostname === "www.dropbox.com") {
+      parsed.hostname = "dl.dropboxusercontent.com";
+      parsed.searchParams.delete("dl");
+      parsed.searchParams.set("raw", "1");
+    }
+    return parsed.toString();
+  } catch (error) {
+    console.warn(`Invalid audio link: ${normalized}`);
+    return "";
+  }
+}
+function createAudioTrack(source, options) {
+  const playableLink = normalizeAudioLink(source);
+  if (!playableLink || typeof Audio !== "function") return null;
+  const track = new Audio();
+  track.src = playableLink;
+  track.preload = "auto";
+  track.loop = Boolean(options.loop);
+  track.volume = clamp(options.volume, 0, 1);
+  track.addEventListener("error", () => {
+    console.warn(
+      `Could not load the ${options.label}. Check that the Dropbox link ` +
+      `is public and points to an audio file.`
+    );
+  });
+  return track;
+}
+const audioTracks = {
+  music: createAudioTrack(BACKGROUND_MUSIC_LINK, {
+    label: "background music",
+    loop: true,
+    volume: GAME_CONFIG.musicVolume
+  }),
+  portalOpen: createAudioTrack(PORTAL_OPEN_SOUND_LINK, {
+    label: "portal opening sound",
+    loop: false,
+    volume: GAME_CONFIG.soundEffectsVolume
+  }),
+  portalEnter: createAudioTrack(PORTAL_ENTER_SOUND_LINK, {
+    label: "portal entry sound",
+    loop: false,
+    volume: GAME_CONFIG.soundEffectsVolume
+  }),
+  portalExit: createAudioTrack(PORTAL_EXIT_SOUND_LINK, {
+    label: "portal exit sound",
+    loop: false,
+    volume: GAME_CONFIG.soundEffectsVolume
+  }),
+  win: createAudioTrack(WIN_SOUND_LINK, {
+    label: "winning sound",
+    loop: false,
+    volume: GAME_CONFIG.soundEffectsVolume
+  })
+};
+const activeSoundEffects = new Set();
+function playAudio(audio) {
+  if (!audio) return;
+  const playResult = audio.play();
+  if (playResult && typeof playResult.catch === "function") {
+    // A browser can reject playback until the user interacts with the page.
+    playResult.catch(() => {});
+  }
+}
+function playSoundEffect(template) {
+  if (!template) return;
+  const sound =
+    typeof template.cloneNode === "function"
+      ? template.cloneNode(true)
+      : template;
+  sound.loop = false;
+  sound.volume = template.volume;
+  try {
+    sound.currentTime = 0;
+  } catch (error) {
+    // Some streaming audio sources do not allow seeking before loading.
+  }
+  activeSoundEffects.add(sound);
+  sound.addEventListener(
+    "ended",
+    () => activeSoundEffects.delete(sound),
+    { once: true }
+  );
+  sound.addEventListener(
+    "error",
+    () => activeSoundEffects.delete(sound),
+    { once: true }
+  );
+  playAudio(sound);
+}
+function startBackgroundMusic() {
+  if (!audioTracks.music) return;
+  playAudio(audioTracks.music);
+}
+function pauseBackgroundMusic() {
+  if (audioTracks.music) audioTracks.music.pause();
+}
+function clamp(value, minimum, maximum) {
+  return Math.max(minimum, Math.min(maximum, value));
+}
+function moveToward(value, target, maximumChange) {
+  if (value < target) return Math.min(value + maximumChange, target);
+  if (value > target) return Math.max(value - maximumChange, target);
+  return target;
+}
+function rectsOverlap(a, b) {
+  return (
+    a.x < b.x + b.w &&
+    a.x + a.w > b.x &&
+    a.y < b.y + b.h &&
+    a.y + a.h > b.y
+  );
+}
+function pointInRect(px, py, rectangle) {
+  return (
+    px >= rectangle.x &&
+    px <= rectangle.x + rectangle.w &&
+    py >= rectangle.y &&
+    py <= rectangle.y + rectangle.h
+  );
+}
+function randomSeed() {
+  if (window.crypto && window.crypto.getRandomValues) {
+    const values = new Uint32Array(1);
+    window.crypto.getRandomValues(values);
+    return values[0];
+  }
+  return Math.floor(Math.random() * 0xffffffff);
+}
+function createRandom(seed) {
+  let state = seed >>> 0;
+  return function random() {
+    state += 0x6d2b79f5;
+    let value = state;
+    value = Math.imul(value ^ (value >>> 15), value | 1);
+    value ^= value + Math.imul(value ^ (value >>> 7), value | 61);
+    return ((value ^ (value >>> 14)) >>> 0) / 4294967296;
+  };
+}
+function randomBetween(random, minimum, maximum) {
+  return minimum + random() * (maximum - minimum);
+}
+function shuffle(random, values) {
+  for (let index = values.length - 1; index > 0; index--) {
+    const swapIndex = Math.floor(random() * (index + 1));
+    const temporary = values[index];
+    values[index] = values[swapIndex];
+    values[swapIndex] = temporary;
+  }
+  return values;
+}
+function createPortalChallengePlan(random, difficulty) {
+  const candidates = [];
+  const plan = {};
+  for (let index = 0; index < difficulty.sections - 1; index++) {
+    candidates.push(index);
+  }
+  shuffle(random, candidates);
+  const firstType = random() < 0.5 ? "portal-wall" : "portal-gap";
+  const secondType =
+    firstType === "portal-wall" ? "portal-gap" : "portal-wall";
+  for (
+    let index = 0;
+    index < difficulty.requiredPortalChallenges;
+    index++
+  ) {
+    plan[candidates[index]] = index % 2 === 0 ? firstType : secondType;
+  }
+  return plan;
+}
+function validateGeneratedPath(
+  segments,
+  transitions,
+  challenges,
+  difficulty
+) {
+  if (
+    segments.length !== difficulty.sections ||
+    transitions.length !== segments.length - 1
+  ) {
+    return false;
+  }
+  for (let index = 1; index < segments.length; index++) {
+    const previous = segments[index - 1];
+    const current = segments[index];
+    const transition = transitions[index - 1];
+    const gap = current.x - (previous.x + previous.w);
+    const step = Math.abs(current.y - previous.y);
+    if (
+      current.w < GENERATION.minimumPlatformWidth ||
+      step > GENERATION.maximumStep
+    ) {
+      return false;
+    }
+    if (
+      transition.type === "jump-gap" &&
+      gap > GENERATION.maximumGap
+    ) {
+      return false;
+    }
+    if (
+      transition.type === "stepping-gap" &&
+      (
+        gap > GENERATION.maximumSteppingGap ||
+        !transition.hasSteppingStone
+      )
+    ) {
+      return false;
+    }
+    if (
+      transition.type === "portal-gap" &&
+      (
+        gap < GENERATION.minimumPortalGap ||
+        gap > GENERATION.maximumPortalGap ||
+        transition.portalPads !== 2
+      )
+    ) {
+      return false;
+    }
+  }
+  const portalChallengeCount =
+    transitions.filter(transition => transition.type === "portal-gap").length +
+    challenges.filter(challenge => challenge.type === "portal-wall").length;
+  const spikeStripCount = challenges.filter(
+    challenge => challenge.type === "platform-spikes"
+  ).length;
+  return (
+    portalChallengeCount >= difficulty.requiredPortalChallenges &&
+    spikeStripCount >= difficulty.platformSpikeStrips
+  );
+}
+function addDecorativePortalSurface(
+  random,
+  segment,
+  index,
+  targetPlatforms
+) {
+  const variant = Math.floor(random() * 3);
+  if (variant === 0) {
+    const width = randomBetween(random, 138, 188);
+    targetPlatforms.push({
+      x: segment.x + randomBetween(
+        random,
+        55,
+        Math.max(56, segment.w - width - 55)
+      ),
+      y: segment.y - randomBetween(random, 155, 205),
+      w: width,
+      h: 26,
+      type: "portal",
+      subtype: "floating-panel",
+      allowedPortalSides: ["top", "bottom"]
+    });
+    return;
+  }
+  if (variant === 1) {
+    const height = randomBetween(random, 112, 152);
+    targetPlatforms.push({
+      x: segment.x + randomBetween(
+        random,
+        80,
+        Math.max(81, segment.w - 108)
+      ),
+      y: segment.y - height - randomBetween(random, 82, 105),
+      w: 28,
+      h: height,
+      type: "portal",
+      subtype: "floating-panel",
+      allowedPortalSides: ["left", "right"]
+    });
+    return;
+  }
+  const horizontalWidth = randomBetween(random, 112, 142);
+  targetPlatforms.push({
+    x: segment.x + 45,
+    y: segment.y - 178,
+    w: horizontalWidth,
+    h: 24,
+    type: "portal",
+    subtype: "floating-panel",
+    allowedPortalSides: ["top", "bottom"]
+  });
+  targetPlatforms.push({
+    x: segment.x + segment.w - 78,
+    y: segment.y - 225,
+    w: 26,
+    h: 122,
+    type: "portal",
+    subtype: "floating-panel",
+    allowedPortalSides: ["left", "right"]
+  });
+}
+function addPortalWall(random, segment, sectionIndex, targetPlatforms) {
+  const width = 52;
+  const height = randomBetween(random, 235, 290);
+  const minimumX = segment.x + (sectionIndex === 0 ? 250 : 145);
+  const maximumX = segment.x + segment.w - width - 125;
+  const x = randomBetween(
+    random,
+    Math.min(minimumX, maximumX),
+    Math.max(minimumX, maximumX)
+  );
+  const wall = {
+    x,
+    y: segment.y - height,
+    w: width,
+    h: height,
+    type: "portal",
+    subtype: "portal-wall",
+    allowedPortalSides: ["left", "right"]
+  };
+  targetPlatforms.push(wall);
+  return wall;
+}
+function addPlatformSpikeStrip(
+  random,
+  segment,
+  sectionIndex,
+  sectionCount,
+  targetPlatforms
+) {
+  const width = randomBetween(random, 78, 124);
+  const leftMargin = sectionIndex === 0 ? 190 : 92;
+  const rightMargin = sectionIndex === sectionCount - 1 ? 190 : 92;
+  const minimumX = segment.x + leftMargin;
+  const maximumX = segment.x + segment.w - rightMargin - width;
+  for (let attempt = 0; attempt < 20; attempt++) {
+    const x = randomBetween(
+      random,
+      Math.min(minimumX, maximumX),
+      Math.max(minimumX, maximumX)
+    );
+    const spikes = {
+      x,
+      y: segment.y - 36,
+      w: width,
+      h: 36,
+      type: "hazard",
+      subtype: "platform-spikes"
+    };
+    const clearance = {
+      x: spikes.x - 30,
+      y: spikes.y - 12,
+      w: spikes.w + 60,
+      h: spikes.h + 50
+    };
+    const blocked = targetPlatforms.some(platform =>
+      (
+        platform.type === "portal" ||
+        platform.subtype === "platform-spikes" ||
+        platform.subtype === "stepping-stone"
+      ) &&
+      rectsOverlap(clearance, platform)
+    );
+    if (!blocked) {
+      targetPlatforms.push(spikes);
+      return spikes;
+    }
+  }
+  return null;
+}
+function generateLevel(difficultyKey, seed) {
+  const difficulty = DIFFICULTIES[difficultyKey] || DIFFICULTIES.normal;
+  const random = createRandom(seed);
+  const portalPlan = createPortalChallengePlan(random, difficulty);
+  const generatedPlatforms = [];
+  const generatedSegments = [];
+  const generatedTransitions = [];
+  const generatedChallenges = [];
+  let floorY = 748;
+  let platformX = 0;
+  let platformWidth = 640;
+  for (let index = 0; index < difficulty.sections; index++) {
+    let incomingTransition = null;
+    if (index > 0) {
+      const previous = generatedSegments[index - 1];
+      const forcedType = portalPlan[index - 1];
+      const transitionType =
+        forcedType === "portal-gap"
+          ? "portal-gap"
+          : random() < 0.28
+            ? "stepping-gap"
+            : "jump-gap";
+      const gap =
+        transitionType === "portal-gap"
+          ? randomBetween(
+              random,
+              GENERATION.minimumPortalGap,
+              GENERATION.maximumPortalGap
+            )
+          : transitionType === "stepping-gap"
+            ? randomBetween(
+                random,
+                GENERATION.minimumSteppingGap,
+                GENERATION.maximumSteppingGap
+              )
+            : randomBetween(
+                random,
+                GENERATION.minimumGap,
+                GENERATION.maximumGap
+              );
+      const maximumFloorChange =
+        transitionType === "portal-gap" ? 18 : GENERATION.maximumStep;
+      const floorChange = randomBetween(
+        random,
+        -maximumFloorChange,
+        maximumFloorChange
+      );
+      floorY = clamp(
+        previous.y + floorChange,
+        GENERATION.minimumFloorY,
+        GENERATION.maximumFloorY
+      );
+      platformX = previous.x + previous.w + gap;
+      platformWidth = randomBetween(
+        random,
+        GENERATION.minimumPlatformWidth,
+        GENERATION.maximumPlatformWidth
+      );
+      generatedPlatforms.push({
+        x: previous.x + previous.w,
+        y: 834,
+        w: gap,
+        h: GENERATION.worldHeight - 834,
+        type: "hazard",
+        subtype: "pit-spikes"
+      });
+      incomingTransition = {
+        type: transitionType,
+        gap,
+        fromIndex: index - 1,
+        toIndex: index,
+        hasSteppingStone: false,
+        portalPads: 0
+      };
+      generatedTransitions.push(incomingTransition);
+    }
+    const segment = {
+      x: platformX,
+      y: floorY,
+      w: platformWidth,
+      h: GENERATION.worldHeight - floorY,
+      type: "normal",
+      subtype: "main-platform"
+    };
+    generatedSegments.push(segment);
+    generatedPlatforms.push(segment);
+    if (incomingTransition && incomingTransition.type === "stepping-gap") {
+      const previous = generatedSegments[index - 1];
+      const steppingWidth = randomBetween(random, 82, 102);
+      const steppingY =
+        Math.min(previous.y, segment.y) - randomBetween(random, 12, 30);
+      generatedPlatforms.push({
+        x:
+          previous.x +
+          previous.w +
+          (incomingTransition.gap - steppingWidth) / 2,
+        y: steppingY,
+        w: steppingWidth,
+        h: GENERATION.worldHeight - steppingY,
+        type: "normal",
+        subtype: "stepping-stone"
+      });
+      incomingTransition.hasSteppingStone = true;
+    }
+    if (incomingTransition && incomingTransition.type === "portal-gap") {
+      const previous = generatedSegments[index - 1];
+      generatedPlatforms.push({
+        x: previous.x + previous.w - 170,
+        y: previous.y - 18,
+        w: 140,
+        h: 18,
+        type: "portal",
+        subtype: "portal-pad",
+        allowedPortalSides: ["top"]
+      });
+      generatedPlatforms.push({
+        x: segment.x + 30,
+        y: segment.y - 18,
+        w: 140,
+        h: 18,
+        type: "portal",
+        subtype: "portal-pad",
+        allowedPortalSides: ["top"]
+      });
+      incomingTransition.portalPads = 2;
+      incomingTransition.hint = {
+        text: "This gap is too wide — link the two white floor pads",
+        x: previous.x + previous.w + incomingTransition.gap / 2,
+        y: Math.min(previous.y, segment.y) - 225
+      };
+    }
+  }
+  const wallSectionIndexes = new Set();
+  Object.keys(portalPlan).forEach(key => {
+    const sectionIndex = Number(key);
+    if (portalPlan[key] !== "portal-wall") return;
+    const wall = addPortalWall(
+      random,
+      generatedSegments[sectionIndex],
+      sectionIndex,
+      generatedPlatforms
+    );
+    wallSectionIndexes.add(sectionIndex);
+    generatedChallenges.push({
+      type: "portal-wall",
+      sectionIndex,
+      x: wall.x,
+      hint: {
+        text: "Portal through the sealed white wall",
+        x: wall.x + wall.w / 2,
+        y: wall.y - 24
+      }
+    });
+  });
+  const spikeCandidates = generatedSegments
+    .map((segment, index) => ({ segment, index }))
+    .filter(candidate => !wallSectionIndexes.has(candidate.index));
+  shuffle(random, spikeCandidates);
+  let spikeStripsAdded = 0;
+  for (
+    let index = 0;
+    index < spikeCandidates.length &&
+    spikeStripsAdded < difficulty.platformSpikeStrips;
+    index++
+  ) {
+    const candidate = spikeCandidates[index];
+    const spikes = addPlatformSpikeStrip(
+      random,
+      candidate.segment,
+      candidate.index,
+      generatedSegments.length,
+      generatedPlatforms
+    );
+    if (spikes) {
+      generatedChallenges.push({
+        type: "platform-spikes",
+        sectionIndex: candidate.index,
+        x: spikes.x
+      });
+      spikeStripsAdded++;
+    }
+  }
+  generatedSegments.forEach((segment, index) => {
+    if (!wallSectionIndexes.has(index)) {
+      addDecorativePortalSurface(
+        random,
+        segment,
+        index,
+        generatedPlatforms
+      );
+    }
+  });
+  if (
+    !validateGeneratedPath(
+      generatedSegments,
+      generatedTransitions,
+      generatedChallenges,
+      difficulty
+    )
+  ) {
+    throw new Error("Generated path did not pass the solvability rules.");
+  }
+  platforms = generatedPlatforms;
+  pathSegments = generatedSegments;
+  levelTransitions = generatedTransitions;
+  levelChallenges = generatedChallenges;
+  const first = pathSegments[0];
+  const last = pathSegments[pathSegments.length - 1];
+  spawn.x = first.x + 90;
+  spawn.y = first.y - player.h;
+  exitDoor = {
+    x: last.x + last.w - 120,
+    y: last.y - 85,
+    w: 54,
+    h: 85
+  };
+  WORLD = {
+    width: last.x + last.w + 120,
+    height: GENERATION.worldHeight
+  };
+  const challengeHints = generatedTransitions
+    .filter(transition => transition.hint)
+    .map(transition => transition.hint)
+    .concat(
+      generatedChallenges
+        .filter(challenge => challenge.hint)
+        .map(challenge => challenge.hint)
+    );
+  hints = [
+    {
+      text: "White walls and wide pits require both portals",
+      x: first.x + Math.min(first.w * 0.45, 300),
+      y: first.y - 325
+    },
+    ...challengeHints,
+    {
+      text: "Reach the green exit",
+      x: exitDoor.x + exitDoor.w / 2,
+      y: exitDoor.y - 24
+    }
+  ];
+}
+function updatePortalHud() {
+  blueState.textContent = portals.blue ? "active" : "not placed";
+  orangeState.textContent = portals.orange ? "active" : "not placed";
+}
+function clearPortals() {
+  portals.blue = null;
+  portals.orange = null;
+  updatePortalHud();
+}
+function resetPlayer(countDeath = false) {
+  if (countDeath) {
+    deaths++;
+    deathCount.textContent = String(deaths);
+    clearPortals();
+  }
+  player.x = spawn.x;
+  player.y = spawn.y;
+  player.vx = 0;
+  player.vy = 0;
+  player.grounded = false;
+  player.coyoteTimer = 0;
+  player.jumpBufferTimer = 0;
+  player.portalCooldown = PORTAL_COOLDOWN;
+  player.lastPortalEntry = "none";
+  player.lastPortalExit = "none";
+  gameWon = false;
+  overlay.classList.remove("show");
+  overlay.setAttribute("aria-hidden", "true");
+}
+function snapCameraToPlayer() {
+  camera.x = clamp(
+    player.x - canvas.width * 0.3,
+    0,
+    Math.max(0, WORLD.width - canvas.width)
+  );
+  camera.y = clamp(
+    player.y - canvas.height * 0.62,
+    0,
+    WORLD.height - canvas.height
+  );
+}
+function startNewLevel() {
+  currentDifficulty = difficultySelect.value;
+  menuDifficultySelect.value = currentDifficulty;
+  currentSeed = randomSeed();
+  generateLevel(currentDifficulty, currentSeed);
+  deaths = 0;
+  deathCount.textContent = "0";
+  clearPortals();
+  resetPlayer(false);
+  snapCameraToPlayer();
+  gameRunning = true;
+  mainMenu.classList.add("hidden");
+  mainMenu.hidden = true;
+  mainMenu.setAttribute("aria-hidden", "true");
+  startBackgroundMusic();
+  const difficulty = DIFFICULTIES[currentDifficulty];
+  const portalLocks =
+    levelTransitions.filter(
+      transition => transition.type === "portal-gap"
+    ).length +
+    levelChallenges.filter(
+      challenge => challenge.type === "portal-wall"
+    ).length;
+  levelInfo.textContent =
+    `${difficulty.label} · ${difficulty.sections} sections · ` +
+    `${portalLocks} portal ${portalLocks === 1 ? "lock" : "locks"}`;
+}
+function showMainMenu() {
+  gameRunning = false;
+  keys.clear();
+  pauseBackgroundMusic();
+  menuDifficultySelect.value = difficultySelect.value;
+  overlay.classList.remove("show");
+  overlay.setAttribute("aria-hidden", "true");
+  mainMenu.hidden = false;
+  mainMenu.classList.remove("hidden");
+  mainMenu.setAttribute("aria-hidden", "false");
+}
+function startGameFromMenu() {
+function startGameFromMenu(event) {
+  if (event && typeof event.preventDefault === "function") {
+    event.preventDefault();
+  }
+  if (startInProgress) return;
+  startInProgress = true;
+  difficultySelect.value = menuDifficultySelect.value;
+  // Give immediate visual feedback even if an optional asset has a problem.
+  mainMenu.hidden = true;
+  mainMenu.classList.add("hidden");
+  mainMenu.setAttribute("aria-hidden", "true");
+  gameRunning = true;
+  try {
+  startNewLevel();
+    startNewLevel();
+  } catch (error) {
+    // The menu backdrop is already a valid generated chamber, so use it as a
+    // safe fallback rather than trapping the player in the menu.
+    console.error("Could not generate a new chamber:", error);
+    resetPlayer(false);
+    snapCameraToPlayer();
+    startBackgroundMusic();
+    if (gameError) {
+      gameError.hidden = false;
+      gameError.textContent =
+        "A new chamber could not be generated, so the prepared chamber was started instead.";
+    }
+  } finally {
+    startInProgress = false;
+  }
+}
+function prepareMenuBackdrop() {
+  currentSeed = randomSeed();
+  generateLevel(currentDifficulty, currentSeed);
+  clearPortals();
+  resetPlayer(false);
+  snapCameraToPlayer();
+  gameRunning = false;
+  levelInfo.textContent = "waiting to start";
+  mainMenu.hidden = false;
+  mainMenu.classList.remove("hidden");
+  mainMenu.setAttribute("aria-hidden", "false");
+}
+function portalSideLength(block, side) {
+  return side === "left" || side === "right" ? block.h : block.w;
+}
+function getPortalSurface(block, worldX, worldY) {
+  const possibleSides = [
+    { side: "left", value: Math.abs(worldX - block.x) },
+    { side: "right", value: Math.abs(worldX - (block.x + block.w)) },
+    { side: "top", value: Math.abs(worldY - block.y) },
+    { side: "bottom", value: Math.abs(worldY - (block.y + block.h)) }
+  ]
+    .filter(candidate =>
+      (
+        !block.allowedPortalSides ||
+        block.allowedPortalSides.includes(candidate.side)
+      ) &&
+      portalSideLength(block, candidate.side) >= MINIMUM_PORTAL_LENGTH
+    )
+    .sort((a, b) => a.value - b.value);
+  if (!possibleSides.length) return null;
+  const side = possibleSides[0].side;
+  const portal = { side, block };
+  if (side === "left" || side === "right") {
+    portal.w = 14;
+    portal.h = Math.min(88, block.h - 12);
+    portal.x = side === "left" ? block.x - 7 : block.x + block.w - 7;
+    portal.y = clamp(
+      worldY - portal.h / 2,
+      block.y + 6,
+      block.y + block.h - portal.h - 6
+    );
+  } else {
+    portal.w = Math.min(88, block.w - 12);
+    portal.h = 14;
+    portal.x = clamp(
+      worldX - portal.w / 2,
+      block.x + 6,
+      block.x + block.w - portal.w - 6
+    );
+    portal.y = side === "top" ? block.y - 7 : block.y + block.h - 7;
+  }
+  return portal;
+}
+function placePortal(kind, screenX, screenY) {
+  if (gameWon) return;
+  const worldX = screenX + camera.x;
+  const worldY = screenY + camera.y;
+  const portalBlock = platforms.find(platform =>
+    platform.type === "portal" &&
+    pointInRect(worldX, worldY, platform)
+  );
+  if (!portalBlock) return;
+  const portal = getPortalSurface(portalBlock, worldX, worldY);
+  if (!portal) return;
+  portals[kind] = portal;
+  updatePortalHud();
+  playSoundEffect(audioTracks.portalOpen);
+}
+function getPortalNormal(portal) {
+  switch (portal.side) {
+    case "left":
+      return { x: -1, y: 0 };
+    case "right":
+      return { x: 1, y: 0 };
+    case "top":
+      return { x: 0, y: -1 };
+    case "bottom":
+      return { x: 0, y: 1 };
+    default:
+      return { x: 0, y: 0 };
+  }
+}
+function getPortalTangent(portal) {
+  const normal = getPortalNormal(portal);
+  // A consistent clockwise local axis prevents mirroring when portals face
+  // opposite directions.
+  return {
+    x: -normal.y,
+    y: normal.x
+  };
+}
+function describePortalEntry(side) {
+  switch (side) {
+    case "top":
+      return "from above";
+    case "bottom":
+      return "from below";
+    case "left":
+      return "from the left";
+    case "right":
+      return "from the right";
+    default:
+      return "unknown";
+  }
+}
+function describePortalExit(side) {
+  switch (side) {
+    case "top":
+      return "upward";
+    case "bottom":
+      return "downward";
+    case "left":
+      return "to the left";
+    case "right":
+      return "to the right";
+    default:
+      return "unknown";
+  }
+}
+function portalCenter(portal) {
+  return {
+    x: portal.x + portal.w / 2,
+    y: portal.y + portal.h / 2
+  };
+}
+function playerCenterAt(position) {
+  return {
+    x: position.x + player.w / 2,
+    y: position.y + player.h / 2
+  };
+}
+function dot(a, b) {
+  return a.x * b.x + a.y * b.y;
+}
+function portalLongSize(portal) {
+  return portal.side === "left" || portal.side === "right"
+    ? portal.h
+    : portal.w;
+}
+function playerLongSize(portal) {
+  return portal.side === "left" || portal.side === "right"
+    ? player.h
+    : player.w;
+}
+function playerNormalHalfSize(portal) {
+  return portal.side === "left" || portal.side === "right"
+    ? player.w / 2
+    : player.h / 2;
+}
+function tryTeleport(previousPosition) {
+  if (
+    player.portalCooldown > 0 ||
+    !portals.blue ||
+    !portals.orange
+  ) {
+    return false;
+  }
+  const previousCenter = playerCenterAt(previousPosition);
+  const currentCenter = playerCenterAt(player);
+  const velocity = { x: player.vx, y: player.vy };
+  for (const entryName of ["blue", "orange"]) {
+    const entryPortal = portals[entryName];
+    const exitPortal = portals[entryName === "blue" ? "orange" : "blue"];
+    const entryCenter = portalCenter(entryPortal);
+    const entryNormal = getPortalNormal(entryPortal);
+    const entryTangent = getPortalTangent(entryPortal);
+    const halfNormal = playerNormalHalfSize(entryPortal);
+    const previousOffset = {
+      x: previousCenter.x - entryCenter.x,
+      y: previousCenter.y - entryCenter.y
+    };
+    const currentOffset = {
+      x: currentCenter.x - entryCenter.x,
+      y: currentCenter.y - entryCenter.y
+    };
+    const previousDistance = dot(previousOffset, entryNormal);
+    const currentDistance = dot(currentOffset, entryNormal);
+    const approachSpeed = dot(velocity, entryNormal);
+    const tangentOffset = dot(currentOffset, entryTangent);
+    const entryTravel = Math.max(
+      1,
+      (portalLongSize(entryPortal) - playerLongSize(entryPortal)) / 2
+    );
+    const crossedPortalPlane =
+      previousDistance >= halfNormal - PORTAL_EDGE_PADDING &&
+      currentDistance <= halfNormal + PORTAL_EDGE_PADDING &&
+      currentDistance < previousDistance;
+    const movingIntoPortal = approachSpeed < -20;
+    const insideAperture =
+      Math.abs(tangentOffset) <= entryTravel + PORTAL_EDGE_PADDING;
+    if (!crossedPortalPlane || !movingIntoPortal || !insideAperture) {
+      continue;
+    }
+    playSoundEffect(audioTracks.portalEnter);
+    const entryRatio = clamp(tangentOffset / entryTravel, -1, 1);
+    const exitCenter = portalCenter(exitPortal);
+    const exitNormal = getPortalNormal(exitPortal);
+    const exitTangent = getPortalTangent(exitPortal);
+    const exitTravel = Math.max(
+      0,
+      (portalLongSize(exitPortal) - playerLongSize(exitPortal)) / 2
+    );
+    const exitNormalOffset =
+      playerNormalHalfSize(exitPortal) + PORTAL_EDGE_PADDING;
+    const mappedExitOffset = entryRatio * exitTravel;
+    const destinationCenter = {
+      x:
+        exitCenter.x +
+        exitNormal.x * exitNormalOffset +
+        exitTangent.x * mappedExitOffset,
+      y:
+        exitCenter.y +
+        exitNormal.y * exitNormalOffset +
+        exitTangent.y * mappedExitOffset
+    };
+    player.x = destinationCenter.x - player.w / 2;
+    player.y = destinationCenter.y - player.h / 2;
+    const totalSpeed = Math.hypot(player.vx, player.vy);
+    const inwardSpeed = Math.max(0, -dot(velocity, entryNormal));
+    const tangentSpeed = dot(velocity, entryTangent);
+    const outwardSpeed = Math.max(270, inwardSpeed, totalSpeed * 0.75);
+    player.vx =
+      exitNormal.x * outwardSpeed + exitTangent.x * tangentSpeed;
+    player.vy =
+      exitNormal.y * outwardSpeed + exitTangent.y * tangentSpeed;
+    player.grounded = false;
+    player.portalCooldown = PORTAL_COOLDOWN;
+    player.lastPortalEntry = describePortalEntry(entryPortal.side);
+    player.lastPortalExit = describePortalExit(exitPortal.side);
+    window.setTimeout(
+      () => playSoundEffect(audioTracks.portalExit),
+      65
+    );
+    return true;
+  }
+  return false;
+}
+function resolveSolidCollisions(axis) {
+  for (const block of platforms) {
+    if (block.type === "hazard" || !rectsOverlap(player, block)) {
+      continue;
+    }
+    if (axis === "x") {
+      if (player.vx > 0) player.x = block.x - player.w;
+      if (player.vx < 0) player.x = block.x + block.w;
+      player.vx = 0;
+    } else {
+      if (player.vy > 0) {
+        player.y = block.y - player.h;
+        player.vy = 0;
+        player.grounded = true;
+      } else if (player.vy < 0) {
+        player.y = block.y + block.h;
+        player.vy = 0;
+      }
+    }
+  }
+}
+function touchesHazard() {
+  return platforms.some(block =>
+    block.type === "hazard" && rectsOverlap(player, block)
+  );
+}
+function queueJump() {
+  if (!gameWon) {
+    player.jumpBufferTimer = PHYSICS.jumpBufferTime;
+  }
+}
+function performBufferedJump() {
+  if (player.jumpBufferTimer <= 0 || player.coyoteTimer <= 0) return;
+  player.vy = -PHYSICS.jumpSpeed;
+  player.grounded = false;
+  player.coyoteTimer = 0;
+  player.jumpBufferTimer = 0;
+}
+function updatePlayer(deltaTime) {
+  if (gameWon) return;
+  if (player.grounded) {
+    player.coyoteTimer = PHYSICS.coyoteTime;
+  } else {
+    player.coyoteTimer = Math.max(0, player.coyoteTimer - deltaTime);
+  }
+  player.jumpBufferTimer = Math.max(
+    0,
+    player.jumpBufferTimer - deltaTime
+  );
+  player.portalCooldown = Math.max(
+    0,
+    player.portalCooldown - deltaTime
+  );
+  performBufferedJump();
+  const movingLeft = keys.has("ArrowLeft") || keys.has("KeyA");
+  const movingRight = keys.has("ArrowRight") || keys.has("KeyD");
+  const inputDirection = Number(movingRight) - Number(movingLeft);
+  if (inputDirection !== 0) {
+    const acceleration = player.grounded
+      ? PHYSICS.runAcceleration
+      : PHYSICS.airAcceleration;
+    player.vx = moveToward(
+      player.vx,
+      inputDirection * PHYSICS.maxRunSpeed,
+      acceleration * deltaTime
+    );
+  } else {
+    const deceleration = player.grounded
+      ? PHYSICS.groundDeceleration
+      : PHYSICS.airDeceleration;
+    player.vx = moveToward(player.vx, 0, deceleration * deltaTime);
+  }
+  player.vy = Math.min(
+    player.vy + PHYSICS.gravity * deltaTime,
+    PHYSICS.maxFallSpeed
+  );
+  player.grounded = false;
+  const beforeHorizontalMove = { x: player.x, y: player.y };
+  player.x += player.vx * deltaTime;
+  const teleportedHorizontally = tryTeleport(beforeHorizontalMove);
+  if (!teleportedHorizontally) {
+    resolveSolidCollisions("x");
+    const beforeVerticalMove = { x: player.x, y: player.y };
+    player.y += player.vy * deltaTime;
+    const teleportedVertically = tryTeleport(beforeVerticalMove);
+    if (!teleportedVertically) {
+      resolveSolidCollisions("y");
+    }
+  }
+  player.x = clamp(player.x, 0, WORLD.width - player.w);
+  if (touchesHazard() || player.y > WORLD.height + 100) {
+    resetPlayer(true);
+    return;
+  }
+  if (rectsOverlap(player, exitDoor)) {
+    gameWon = true;
+    pauseBackgroundMusic();
+    playSoundEffect(audioTracks.win);
+    overlayTitle.textContent = "Level Complete";
+    overlayText.textContent =
+      `You cleared the ${DIFFICULTIES[currentDifficulty].label.toLowerCase()} ` +
+      `chamber with ${deaths} ${deaths === 1 ? "death" : "deaths"}.`;
+    overlay.classList.add("show");
+    overlay.setAttribute("aria-hidden", "false");
+  }
+}
+function updateCamera(deltaTime) {
+  const targetX = player.x - canvas.width * 0.3;
+  const targetY = player.y - canvas.height * 0.62;
+  const horizontalBlend = 1 - Math.exp(-7.5 * deltaTime);
+  const verticalBlend = 1 - Math.exp(-5.5 * deltaTime);
+  camera.x += (targetX - camera.x) * horizontalBlend;
+  camera.y += (targetY - camera.y) * verticalBlend;
+  camera.x = clamp(
+    camera.x,
+    0,
+    Math.max(0, WORLD.width - canvas.width)
+  );
+  camera.y = clamp(
+    camera.y,
+    0,
+    WORLD.height - canvas.height
+  );
+}
+function drawImageCover(image, x, y, width, height) {
+  const imageRatio = image.naturalWidth / image.naturalHeight;
+  const areaRatio = width / height;
+  let sourceWidth = image.naturalWidth;
+  let sourceHeight = image.naturalHeight;
+  let sourceX = 0;
+  let sourceY = 0;
+  if (imageRatio > areaRatio) {
+    sourceWidth = image.naturalHeight * areaRatio;
+    sourceX = (image.naturalWidth - sourceWidth) / 2;
+  } else {
+    sourceHeight = image.naturalWidth / areaRatio;
+    sourceY = (image.naturalHeight - sourceHeight) / 2;
+  }
+  ctx.drawImage(
+    image,
+    sourceX,
+    sourceY,
+    sourceWidth,
+    sourceHeight,
+    x,
+    y,
+    width,
+    height
+  );
+}
+function drawGrid() {
+  ctx.save();
+  ctx.strokeStyle = "rgba(120, 180, 220, 0.06)";
+  ctx.lineWidth = 1;
+  const grid = 48;
+  const startX = -camera.x % grid;
+  const startY = -camera.y % grid;
+  for (let x = startX; x < canvas.width; x += grid) {
+    ctx.beginPath();
+    ctx.moveTo(x, 0);
+    ctx.lineTo(x, canvas.height);
+    ctx.stroke();
+  }
+  for (let y = startY; y < canvas.height; y += grid) {
+    ctx.beginPath();
+    ctx.moveTo(0, y);
+    ctx.lineTo(canvas.width, y);
+    ctx.stroke();
+  }
+  ctx.restore();
+}
+function drawBackground() {
+  const gradient = ctx.createLinearGradient(0, 0, 0, canvas.height);
+  gradient.addColorStop(0, GAME_CONFIG.backgroundTopColor);
+  gradient.addColorStop(1, GAME_CONFIG.backgroundBottomColor);
+  ctx.fillStyle = gradient;
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  if (textures.background.ready) {
+    ctx.save();
+    ctx.globalAlpha = clamp(
+      GAME_CONFIG.backgroundTextureOpacity,
+      0,
+      1
+    );
+    drawImageCover(
+      textures.background.image,
+      0,
+      0,
+      canvas.width,
+      canvas.height
+    );
+    ctx.restore();
+  }
+  drawGrid();
+  ctx.save();
+  ctx.translate(-camera.x * 0.18, -camera.y * 0.08);
+  ctx.fillStyle = "rgba(126, 202, 255, 0.08)";
+  const firstColumn = Math.floor(camera.x * 0.18 / 190) - 1;
+  for (let index = firstColumn; index < firstColumn + 9; index++) {
+    const x = index * 190 + 80;
+    ctx.fillRect(x, 90 + (Math.abs(index) % 3) * 50, 90, 260);
+  }
+  ctx.restore();
+}
+function drawRepeatingTexture(
+  texture,
+  x,
+  y,
+  width,
+  height,
+  tileHeight,
+  crop = null
+) {
+  if (!texture || !texture.ready || !texture.image) return false;
+  const image = texture.image;
+  const imageWidth = image.naturalWidth || image.width || tileHeight;
+  const imageHeight = image.naturalHeight || image.height || tileHeight;
+  const cropLeft = clamp(crop && crop.left || 0, 0, 0.95);
+  const cropTop = clamp(crop && crop.top || 0, 0, 0.95);
+  const cropRight = clamp(crop && crop.right || 0, 0, 0.95);
+  const cropBottom = clamp(crop && crop.bottom || 0, 0, 0.95);
+  const sourceX = imageWidth * cropLeft;
+  const sourceY = imageHeight * cropTop;
+  const sourceWidth = Math.max(
+    1,
+    imageWidth * (1 - Math.min(0.98, cropLeft + cropRight))
+  );
+  const sourceHeight = Math.max(
+    1,
+    imageHeight * (1 - Math.min(0.98, cropTop + cropBottom))
+  );
+  const tileWidth = Math.max(
+    1,
+    tileHeight * (sourceWidth / sourceHeight)
+  );
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(x, y, width, height);
+  ctx.clip();
+  for (let tileY = y; tileY < y + height; tileY += tileHeight) {
+    for (let tileX = x; tileX < x + width; tileX += tileWidth) {
+      ctx.drawImage(
+        image,
+        sourceX,
+        sourceY,
+        sourceWidth,
+        sourceHeight,
+        tileX,
+        tileY,
+        tileWidth,
+        tileHeight
+      );
+    }
+  }
+  ctx.restore();
+  return true;
+}
+function drawPlatforms() {
+  for (const platform of platforms) {
+    const x = platform.x - camera.x;
+    const y = platform.y - camera.y;
+    if (
+      x + platform.w < -40 ||
+      x > canvas.width + 40 ||
+      y + platform.h < -40 ||
+      y > canvas.height + 40
+    ) {
+      continue;
+    }
+    if (platform.type === "hazard") {
+      if (platform.subtype === "platform-spikes") {
+        const spikeBaseY = y + platform.h;
+        const spikeWidth = 22;
+        if (
+          drawRepeatingTexture(
+            textures.spikes,
+            x,
+            y,
+            platform.w,
+            platform.h,
+            GAME_CONFIG.spikeTextureTileSize
+          )
+        ) {
+          continue;
+        }
+        ctx.fillStyle = "#ff4e67";
+        ctx.fillRect(x, spikeBaseY - 8, platform.w, 8);
+        for (
+          let offset = 0;
+          offset < platform.w;
+          offset += spikeWidth
+        ) {
+          ctx.beginPath();
+          ctx.moveTo(x + offset, spikeBaseY - 8);
+          ctx.lineTo(
+            x + Math.min(offset + spikeWidth / 2, platform.w),
+            y
+          );
+          ctx.lineTo(
+            x + Math.min(offset + spikeWidth, platform.w),
+            spikeBaseY - 8
+          );
+          ctx.closePath();
+          ctx.fill();
+        }
+      } else {
+        ctx.fillStyle = "#ff4e67";
+        ctx.fillRect(x, y, platform.w, platform.h);
+        const drewSpikeTexture = drawRepeatingTexture(
+          textures.spikes,
+          x,
+          y - 36,
+          platform.w,
+          36,
+          GAME_CONFIG.spikeTextureTileSize
+        );
+        if (!drewSpikeTexture) {
+          ctx.fillStyle = "rgba(255, 255, 255, 0.35)";
+          for (let offset = 0; offset < platform.w; offset += 24) {
+            ctx.beginPath();
+            ctx.moveTo(x + offset, y);
+            ctx.lineTo(x + offset + 12, y - 18);
+            ctx.lineTo(x + offset + 24, y);
+            ctx.fill();
+          }
+        }
+      }
+      continue;
+    }
+    const isPortalSurface = platform.type === "portal";
+    const platformTexture = isPortalSurface
+      ? textures.portalSurface
+      : textures.normalPlatform;
+    ctx.fillStyle = isPortalSurface ? "#f7fbff" : "#dbe8f5";
+    ctx.fillRect(x, y, platform.w, platform.h);
+    const drewPlatformTexture = isPortalSurface
+      ? drawRepeatingTexture(
+          platformTexture,
+          x,
+          y,
+          platform.w,
+          platform.h,
+          GAME_CONFIG.portalTextureTileSize
+        )
+      ? false
+      : drawRepeatingTexture(
+          platformTexture,
+          textures.normalPlatform,
+          x,
+          y,
+          platform.w,
+          Math.min(platform.h, GAME_CONFIG.platformTextureDepth),
+          GAME_CONFIG.platformTextureDepth,
+          GAME_CONFIG.normalPlatformTextureCrop
+        );
+    if (!drewPlatformTexture) {
+      ctx.fillStyle = isPortalSurface
+        ? "rgba(183, 199, 216, 0.65)"
+        : "rgba(91, 112, 132, 0.5)";
+      ctx.fillRect(x, y, platform.w, 8);
+    }
+  }
+}
+function roundedRectanglePath(x, y, width, height, radius) {
+  const safeRadius = Math.min(radius, width / 2, height / 2);
+  ctx.beginPath();
+  if (typeof ctx.roundRect === "function") {
+    ctx.roundRect(x, y, width, height, safeRadius);
+    return;
+  }
+  ctx.moveTo(x + safeRadius, y);
+  ctx.lineTo(x + width - safeRadius, y);
+  ctx.quadraticCurveTo(x + width, y, x + width, y + safeRadius);
+  ctx.lineTo(x + width, y + height - safeRadius);
+  ctx.quadraticCurveTo(
+    x + width,
+    y + height,
+    x + width - safeRadius,
+    y + height
+  );
+  ctx.lineTo(x + safeRadius, y + height);
+  ctx.quadraticCurveTo(x, y + height, x, y + height - safeRadius);
+  ctx.lineTo(x, y + safeRadius);
+  ctx.quadraticCurveTo(x, y, x + safeRadius, y);
+  ctx.closePath();
+}
+function drawPortal(portal, color) {
+  if (!portal) return;
+  const x = portal.x - camera.x;
+  const y = portal.y - camera.y;
+  ctx.save();
+  ctx.shadowColor = color;
+  ctx.shadowBlur = 24;
+  ctx.fillStyle = color;
+  roundedRectanglePath(x, y, portal.w, portal.h, 10);
+  ctx.fill();
+  ctx.shadowBlur = 0;
+  ctx.fillStyle = "rgba(2, 8, 14, 0.86)";
+  roundedRectanglePath(
+    x + Math.min(4, portal.w / 4),
+    y + Math.min(4, portal.h / 4),
+    Math.max(4, portal.w - 8),
+    Math.max(4, portal.h - 8),
+    8
+  );
+  ctx.fill();
+  ctx.restore();
+}
+function drawPlayer() {
+  const x = player.x - camera.x;
+  const y = player.y - camera.y;
+  ctx.save();
+  ctx.shadowColor = player.color;
+  ctx.shadowBlur = 14;
+  if (textures.player.ready) {
+    roundedRectanglePath(x, y, player.w, player.h, 8);
+    ctx.clip();
+    drawImageCover(textures.player.image, x, y, player.w, player.h);
+  } else {
+    ctx.fillStyle = player.color;
+    roundedRectanglePath(x, y, player.w, player.h, 8);
+    ctx.fill();
+    ctx.shadowBlur = 0;
+    ctx.fillStyle = "#07222a";
+    ctx.fillRect(x + 7, y + 10, 5, 5);
+    ctx.fillRect(x + 17, y + 10, 5, 5);
+    ctx.fillStyle = "rgba(255, 255, 255, 0.7)";
+    ctx.fillRect(x + 5, y + player.h - 8, player.w - 10, 3);
+  }
+  ctx.restore();
+}
+function drawExit() {
+  const x = exitDoor.x - camera.x;
+  const y = exitDoor.y - camera.y;
+  ctx.save();
+  ctx.fillStyle = "#172738";
+  ctx.fillRect(x, y, exitDoor.w, exitDoor.h);
+  ctx.shadowColor = "#65f4d1";
+  ctx.shadowBlur = 15;
+  ctx.strokeStyle = "#65f4d1";
+  ctx.lineWidth = 4;
+  ctx.strokeRect(x, y, exitDoor.w, exitDoor.h);
+  ctx.shadowBlur = 0;
+  ctx.fillStyle = "#65f4d1";
+  ctx.fillRect(x + 20, y + 38, 14, 14);
+  ctx.restore();
+}
+function drawHint(hint) {
+  const x = hint.x - camera.x;
+  const y = hint.y - camera.y;
+  if (x < -250 || x > canvas.width + 250) return;
+  ctx.save();
+  ctx.font = "14px system-ui";
+  ctx.textAlign = "center";
+  ctx.fillStyle = "rgba(238, 247, 255, 0.8)";
+  ctx.fillText(hint.text, x, y);
+  ctx.restore();
+}
+function render() {
+  drawBackground();
+  drawPlatforms();
+  drawPortal(portals.blue, "#27a8ff");
+  drawPortal(portals.orange, "#ff8a24");
+  drawExit();
+  drawPlayer();
+  hints.forEach(drawHint);
+}
+let previousTime = performance.now();
+let accumulator = 0;
+function loop(currentTime) {
+  const frameTime = Math.min((currentTime - previousTime) / 1000, 0.05);
+  previousTime = currentTime;
+  accumulator += frameTime;
+  if (gameRunning) {
+    while (accumulator >= FIXED_STEP) {
+      updatePlayer(FIXED_STEP);
+      accumulator -= FIXED_STEP;
+    }
+  } else {
+    accumulator = 0;
+  }
+  if (gameRunning) {
+    updateCamera(frameTime);
+  }
+  render();
+  requestAnimationFrame(loop);
+}
+window.addEventListener("keydown", event => {
+  if (event.target && event.target.tagName === "SELECT") return;
+  if (event.code === "Escape" && !event.repeat) {
+    showMainMenu();
+    return;
+  }
+  if (event.code === "KeyN" && !event.repeat) {
+    startNewLevel();
+    return;
+  }
+  if (!gameRunning) return;
+  keys.add(event.code);
+  if (
+    ["ArrowUp", "Space", "KeyW"].includes(event.code) &&
+    !event.repeat
+  ) {
+    event.preventDefault();
+    queueJump();
+  }
+  if (event.code === "KeyR" && !event.repeat) {
+    resetPlayer(false);
+  }
+});
+window.addEventListener("keyup", event => {
+  keys.delete(event.code);
+  if (
+    ["ArrowUp", "Space", "KeyW"].includes(event.code) &&
+    player.vy < -220
+  ) {
+    player.vy *= 0.55;
+  }
+});
+window.addEventListener("blur", () => {
+  keys.clear();
+});
+canvas.addEventListener("contextmenu", event => {
+  event.preventDefault();
+});
+canvas.addEventListener("mousedown", event => {
+  if (!gameRunning) return;
+  const rectangle = canvas.getBoundingClientRect();
+  const scaleX = canvas.width / rectangle.width;
+  const scaleY = canvas.height / rectangle.height;
+  const x = (event.clientX - rectangle.left) * scaleX;
+  const y = (event.clientY - rectangle.top) * scaleY;
+  if (event.button === 0) placePortal("blue", x, y);
+  if (event.button === 2) placePortal("orange", x, y);
+});
+difficultySelect.addEventListener("change", () => {
+  menuDifficultySelect.value = difficultySelect.value;
+  if (gameRunning) startNewLevel();
+});
+menuDifficultySelect.addEventListener("change", () => {
+  difficultySelect.value = menuDifficultySelect.value;
+});
+newLevelButton.addEventListener("click", startNewLevel);
+menuButton.addEventListener("click", showMainMenu);
+startGameButton.addEventListener("click", startGameFromMenu);
+startGameButton.onclick = startGameFromMenu;
+restartButton.addEventListener("click", startNewLevel);
+completionMenuButton.addEventListener("click", showMainMenu);
+difficultySelect.value = currentDifficulty;
+menuDifficultySelect.value = currentDifficulty;
+if (
+  gameError &&
+  !textures.player.failed &&
+  !textures.background.failed
+) {
+  gameError.hidden = true;
+}
+prepareMenuBackdrop();
+requestAnimationFrame(loop);
+// Small public helper for testing or for generating a new level from a console.
+window.portalGame = {
+  start: startGameFromMenu,
+  newLevel: startNewLevel,
+  restart: () => resetPlayer(false),
+  showMenu: showMainMenu,
+  redraw: render,
+  setCharacterTexture,
+  setBackgroundTexture,
+  setNormalPlatformTexture,
+  setPortalSurfaceTexture,
+  setSpikeTexture,
+  getSeed: () => currentSeed,
+  getDifficulty: () => currentDifficulty,
+  getLastPortalTraversal: () => ({
+    entered: player.lastPortalEntry,
+    exited: player.lastPortalExit
+  }),
+  getLevelStats: () => ({
+    sections: pathSegments.length,
+    worldWidth: Math.round(WORLD.width),
+    portalWalls: levelChallenges.filter(
+      challenge => challenge.type === "portal-wall"
+    ).length,
+    portalGaps: levelTransitions.filter(
+      transition => transition.type === "portal-gap"
+    ).length,
+    platformSpikeStrips: levelChallenges.filter(
+      challenge => challenge.type === "platform-spikes"
+    ).length,
+    transitionTypes: Array.from(
+      new Set(levelTransitions.map(transition => transition.type))
+    ),
+    solvable: validateGeneratedPath(
+      pathSegments,
+      levelTransitions,
+      levelChallenges,
+      DIFFICULTIES[currentDifficulty]
+    )
+  })
+};
+}
+function reportStartupError(error) {
+  console.error("Portal game startup failed:", error);
+  const errorBox = document.getElementById("gameError");
+  if (errorBox) {
+    errorBox.hidden = false;
+    errorBox.textContent =
+      "The game could not start: " +
+      (error && error.message ? error.message : "unknown error") +
+      ". Replace all three panels with the matching updated files.";
+  }
+}
+function bootPortalGame() {
+  try {
+    initializePortalGame();
+  } catch (error) {
+    reportStartupError(error);
+  }
+}
+if (document.readyState === "loading") {
+  document.addEventListener("DOMContentLoaded", bootPortalGame, { once: true });
+} else {
+  bootPortalGame();
+}
+})();
