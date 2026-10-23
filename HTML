@@ -1,0 +1,119 @@
+<main class="game-shell">
+  <header class="topbar">
+    <div>
+      <h1 class="title">ECHO: THE LAST PORTAL</h1>
+      <p class="subtitle">Every chamber is generated from a guaranteed path.</p>
+    </div>
+
+    <div class="controls" aria-label="Level controls">
+      <label class="difficulty-control" for="difficultySelect">
+        Level length
+        <select id="difficultySelect">
+          <option value="easy">Easy / 2 portal locks</option>
+          <option value="normal" selected>Normal / 4 portal locks</option>
+          <option value="hard">Hard / 6 portal locks</option>
+        </select>
+      </label>
+
+      <button class="secondary-button" id="menuButton" type="button">
+        Main Menu
+      </button>
+
+      <button id="newLevelButton" type="button">
+        New Random Level
+      </button>
+    </div>
+  </header>
+
+  <div class="hud" aria-label="Game status">
+    <div class="chip">
+      Blue: <strong id="blueState">not placed</strong>
+    </div>
+
+    <div class="chip">
+      Orange: <strong id="orangeState">not placed</strong>
+    </div>
+
+    <div class="chip">
+      Deaths: <strong id="deathCount">0</strong>
+    </div>
+
+    <div class="chip">
+      Chamber: <strong id="levelInfo">waiting to start</strong>
+    </div>
+  </div>
+
+  <section class="canvas-wrap" aria-label="Game area">
+    <canvas
+      id="game"
+      width="800"
+      height="360"
+      aria-label="Portal platformer game"
+    >
+      Your browser does not support the HTML canvas element.
+    </canvas>
+
+    <!-- Visible by default, so the page still has a menu before JavaScript starts. -->
+    <div class="menu-screen" id="mainMenu">
+      <div class="menu-card" role="dialog" aria-labelledby="menuTitle">
+        <p class="eyebrow">PROCEDURAL TEST CHAMBER</p>
+        <h2 id="menuTitle">Enter the Last Portal</h2>
+        <p class="menu-copy">
+          Each chamber now mixes spike runs, stepping gaps, sealed portal
+          walls, and pits that are impossible to cross without linked portals.
+        </p>
+
+        <label class="menu-difficulty" for="menuDifficultySelect">
+          Choose level length
+          <select id="menuDifficultySelect">
+            <option value="easy">Easy — 5 sections / 2 portal locks</option>
+            <option value="normal" selected>Normal — 8 sections / 4 portal locks</option>
+            <option value="hard">Hard — 12 sections / 6 portal locks</option>
+          </select>
+        </label>
+
+        <div class="menu-actions">
+          <button class="start-button" id="startGameButton" type="button">
+            Start Game
+          </button>
+        </div>
+
+        <p class="menu-controls">
+          Move with A/D or arrow keys · Jump with W, ↑, or Space
+        </p>
+      </div>
+    </div>
+
+    <div class="overlay" id="overlay" aria-hidden="true">
+      <div class="modal" role="dialog" aria-labelledby="overlayTitle">
+        <h2 id="overlayTitle">Level Complete</h2>
+        <p id="overlayText">You reached the reactor exit.</p>
+
+        <div class="modal-actions">
+          <button id="restartButton" type="button">
+            Generate Another Level
+          </button>
+
+          <button class="secondary-button" id="completionMenuButton" type="button">
+            Main Menu
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <div class="game-error" id="gameError" role="alert" hidden>
+      The game could not start. Make sure the complete updated JavaScript was
+      pasted into the JavaScript panel.
+    </div>
+  </section>
+
+  <p class="help">
+    <strong>Move:</strong> A/D or &larr;/&rarr;
+    &nbsp; <strong>Jump:</strong> W, &uarr;, or Space
+    &nbsp; <strong>Blue portal:</strong> Left click
+    &nbsp; <strong>Orange portal:</strong> Right click
+    &nbsp; <strong>Restart chamber:</strong> R
+    &nbsp; <strong>New chamber:</strong> N
+    &nbsp; <strong>Menu:</strong> Esc
+  </p>
+</main>
